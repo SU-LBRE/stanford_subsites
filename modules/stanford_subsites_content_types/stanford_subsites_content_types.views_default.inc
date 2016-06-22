@@ -40,7 +40,7 @@ function stanford_subsites_content_types_views_default_views() {
   $handler->display->display_options['fields']['field_department_directory_image']['element_label_colon'] = FALSE;
   $handler->display->display_options['fields']['field_department_directory_image']['click_sort_column'] = 'fid';
   $handler->display->display_options['fields']['field_department_directory_image']['settings'] = array(
-    'image_style' => '3-col-header',
+    'image_style' => '4-col-header',
     'image_link' => 'content',
     'custom_link_to_entity' => 1,
     'custom_prefix' => '',
