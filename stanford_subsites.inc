@@ -74,7 +74,7 @@ function stanford_subsite_get_subsite_node_from_node() {
 
   // If THIS node is the subsite node itself. Then set it.
   if ($node->type == SUBSITE_CONTENT_TYPE) {
-    return stanford_subsite_subsite_load_node_efq($a1);
+    return stanford_subsite_subsite_load_node_efq($a1, $node->vid);
   }
 
   // Only check the node if it is "enabled"
@@ -209,7 +209,14 @@ function _lookup_subsite_reference_by_path($path) {
   // Check raw string for path... :( needs optimization.
   foreach ($subsite_paths as $nid => $site_path) {
     if (stripos($path, $site_path . "/") === 0) {
-      return stanford_subsite_subsite_load_node_efq($nid);
+      $select = db_select("node", "n")
+        ->fields("n", array("vid"))
+        ->condition("n.nid", $nid);
+      $vid = $select->execute()->fetchField();
+
+      if (is_numeric($vid)) {
+        return stanford_subsite_subsite_load_node_efq($nid, $vid);
+      }
     }
   }
 
@@ -224,7 +231,22 @@ function _lookup_subsite_reference_by_path($path) {
  */
 function _get_subsite_paths() {
 
-  $paths = cache_get('stanford_subsites_subsite_paths');
+  // Try to fetch from static cache first.
+  $paths = NULL;
+  $data = &drupal_static(__FUNCTION__, NULL);
+
+  // Then DB cache if not available.
+  if (is_null($data)) {
+    $paths = cache_get('stanford_subsites_subsite_paths');
+    if (isset($paths->data)) {
+      $data = $paths->data;
+    }
+  }
+  else {
+    $paths = new stdClass();
+    $paths->data = $data;
+  }
+
   // If cache isnt set then we need to generate it.
   if (!$paths) {
     $paths = array();
@@ -236,6 +258,8 @@ function _get_subsite_paths() {
     while ($path_string = $query->fetchAssoc()) {
       $paths[$path_string['nid']] = drupal_get_path_alias("node/" . $path_string['nid']);
     }
+
+    // Save the cache if we can.
     cache_set('stanford_subsites_subsite_paths', $paths);
     return $paths;
   }
@@ -656,17 +680,19 @@ function stanford_subsites_get_subsite_node_by_term($term) {
   // Find a node by joining the taxonomy_index table to node and filtering on
   // node type and tid.
   $select = db_select("node", "n")
-    ->fields("n", array("nid"))
+    ->fields("n", array("nid", "vid"))
     ->condition("ti.tid", $term->tid)
     ->condition("n.type", SUBSITE_CONTENT_TYPE)
     ->range(0, 1);
 
   $select->join("taxonomy_index", "ti", "n.nid = ti.nid");
-  $nid = $select->execute()->fetchField();
+  $r = $select->execute()->fetchObject();
+  $nid = $r->nid;
+  $vid = $r->vid;
 
   // If through all that we get one node. Load and return it.
-  if (is_numeric($nid)) {
-    return stanford_subsite_subsite_load_node_efq($nid);
+  if (is_numeric($nid) && is_numeric($vid)) {
+    return stanford_subsite_subsite_load_node_efq($nid, $vid);
   }
 
   return FALSE;
@@ -681,17 +707,17 @@ function stanford_subsites_get_subsite_node_by_term($term) {
  * @param $nid
  * @return \stdClass
  */
-function stanford_subsite_subsite_load_node_efq($nid) {
+function stanford_subsite_subsite_load_node_efq($nid, $vid) {
   $node = new stdClass();
   $node->nid = $nid;
 
   $q = db_select("node_revision", "nr");
-  $q->leftJoin("field_revision_field_stanford_subsite_sname", "sn", "nr.nid = sn.entity_id");
-  $q->leftJoin("field_revision_field_stanford_subsite_2nd_line", "sl", "nr.nid = sl.entity_id");
-  $q->leftJoin("field_revision_field_stanford_subsite_logo", "lo", "nr.nid = lo.entity_id");
-  $q->leftJoin("field_revision_field_stanford_subsite_front", "fp", "nr.nid = fp.entity_id");
-  $q->leftJoin("field_revision_field_stanford_subsite_slogan", "an", "nr.nid = an.entity_id");
-  $q->leftJoin("field_revision_field_stanford_subsite_theme", "st", "nr.nid = st.entity_id");
+  $q->leftJoin("field_revision_field_stanford_subsite_sname", "sn", "nr.nid = sn.entity_id AND sn.revision_id = $vid");
+  $q->leftJoin("field_revision_field_stanford_subsite_2nd_line", "sl", "nr.nid = sl.entity_id AND sl.revision_id = $vid");
+  $q->leftJoin("field_revision_field_stanford_subsite_logo", "lo", "nr.nid = lo.entity_id AND lo.revision_id = $vid");
+  $q->leftJoin("field_revision_field_stanford_subsite_front", "fp", "nr.nid = fp.entity_id AND fp.revision_id = $vid");
+  $q->leftJoin("field_revision_field_stanford_subsite_slogan", "an", "nr.nid = an.entity_id AND an.revision_id = $vid");
+  $q->leftJoin("field_revision_field_stanford_subsite_theme", "st", "nr.nid = st.entity_id AND st.revision_id = $vid");
   $q->addField("sn", "field_stanford_subsite_sname_value");
   $q->addField("nr", "vid");
   $q->addField("sl", "field_stanford_subsite_2nd_line_value");
